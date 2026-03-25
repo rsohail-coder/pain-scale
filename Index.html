@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pain Scale Activity</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #f0f4f8;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    letter-spacing: 2px;
+    color: #333;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  p.subtitle {
+    color: #666;
+    margin-bottom: 24px;
+    font-size: 0.95rem;
+  }
+  #canvas-wrap {
+    position: relative;
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+    padding: 30px 20px 20px;
+    width: 100%;
+    max-width: 720px;
+  }
+  canvas { display: block; width: 100%; cursor: pointer; }
+
+  #feedback {
+    margin-top: 20px;
+    width: 100%;
+    max-width: 720px;
+    border-radius: 16px;
+    padding: 20px 28px;
+    font-size: 1rem;
+    display: none;
+    animation: fadeIn 0.3s ease;
+    transition: background 0.3s;
+  }
+  #feedback.show { display: block; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+  #feedback .score {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+  #feedback .label {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  #feedback .desc {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    opacity: 0.9;
+  }
+  #feedback .emoji-big {
+    font-size: 3rem;
+    float: right;
+    margin-left: 16px;
+  }
+
+  #reset-btn {
+    margin-top: 16px;
+    padding: 10px 28px;
+    border: none;
+    border-radius: 30px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: #333;
+    color: white;
+    display: none;
+    transition: background 0.2s;
+  }
+  #reset-btn:hover { background: #555; }
+  #reset-btn.show { display: inline-block; }
+</style>
+</head>
+<body>
+
+<h1>Categorical Pain Scale</h1>
+<p class="subtitle">Click on a face to record your pain level</p>
+
+<div id="canvas-wrap">
+  <canvas id="c" height="220"></canvas>
+</div>
+
+<div id="feedback"></div>
+<button id="reset-btn" onclick="reset()">↩ Try Again</button>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const FACES = [
+  {
+    label: 'No Pain',
+    score: 0,
+    color: '#3dbe6e',
+    border: '#2fa05b',
+    mouth: 'smile',
+    tears: false,
+    emoji: '😄',
+    desc: 'You feel completely comfortable. No discomfort at all.',
+    bg: '#d4f5e2', text: '#1a6e3c'
+  },
+  {
+    label: 'Hurts a Little',
+    score: 2,
+    color: '#5cb85c',
+    border: '#4a9a4a',
+    mouth: 'slight-smile',
+    tears: false,
+    emoji: '🙂',
+    desc: 'Minor discomfort that is barely noticeable and easy to ignore.',
+    bg: '#dff0d8', text: '#2d6a2d'
+  },
+  {
+    label: 'Hurts a Little More',
+    score: 4,
+    color: '#c8c800',
+    border: '#a0a000',
+    mouth: 'flat',
+    tears: false,
+    emoji: '😐',
+    desc: 'Noticeable pain that is distracting but you can still do most activities.',
+    bg: '#fefbd8', text: '#706a00'
+  },
+  {
+    label: 'Hurts Even More',
+    score: 6,
+    color: '#f0a000',
+    border: '#c88000',
+    mouth: 'frown',
+    tears: false,
+    emoji: '😟',
+    desc: 'Significant pain that makes it hard to concentrate. Daily tasks feel difficult.',
+    bg: '#fde9c0', text: '#7a4d00'
+  },
+  {
+    label: 'Hurts a Whole Lot',
+    score: 8,
+    color: '#e86020',
+    border: '#c04810',
+    mouth: 'frown',
+    tears: false,
+    emoji: '😣',
+    desc: 'Very severe pain that interferes with all activities. Hard to function normally.',
+    bg: '#fdd0b0', text: '#7a2800'
+  },
+  {
+    label: 'Hurts Worst',
+    score: 10,
+    color: '#e84040',
+    border: '#c02020',
+    mouth: 'frown',
+    tears: true,
+    emoji: '😭',
+    desc: 'The worst possible pain. Unbearable — you cannot do anything and need immediate help.',
+    bg: '#fcc0c0', text: '#7a0000'
+  }
+];
+
+let selected = null;
+let hovered = null;
+let positions = [];
+
+function getLayout() {
+  const W = canvas.offsetWidth || 680;
+  canvas.width = W * window.devicePixelRatio;
+  canvas.height = 220 * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  const w = W;
+  const h = 220;
+  const r = Math.min(w / 6 / 2 - 10, 62);
+  const cy = h / 2 - 18;
+  positions = FACES.map((f, i) => ({
+    x: (w / 6) * i + w / 12,
+    y: cy,
+    r
+  }));
+  return { w, h, r, cy };
+}
+
+function drawFace(f, pos, state) {
+  const { x, y, r } = pos;
+  const scale = state === 'selected' ? 1.13 : state === 'hover' ? 1.07 : 1;
+  const sr = r * scale;
+
+  ctx.save();
+
+  if (state !== 'normal') {
+    ctx.shadowColor = 'rgba(0,0,0,0.25)';
+    ctx.shadowBlur = 14;
+  }
+
+  ctx.beginPath();
+  ctx.arc(x, y, sr, 0, Math.PI * 2);
+  ctx.fillStyle = f.color;
+  ctx.fill();
+  ctx.lineWidth = state === 'selected' ? 4 : 2.5;
+  ctx.strokeStyle = state === 'selected' ? '#222' : f.border;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  const eyeOff = sr * 0.28;
+  const eyeY = y - sr * 0.15;
+  const eyeR = sr * 0.09;
+  ctx.fillStyle = '#333';
+  ctx.beginPath(); ctx.arc(x - eyeOff, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + eyeOff, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
+
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = sr * 0.07;
+  ctx.lineCap = 'round';
+  const my = y + sr * 0.18;
+  const mw = sr * 0.45;
+
+  if (f.mouth === 'smile') {
+    ctx.beginPath();
+    ctx.arc(x, my - sr*0.05, mw, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+  } else if (f.mouth === 'slight-smile') {
+    ctx.beginPath();
+    ctx.arc(x, my, mw * 0.9, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.stroke();
+  } else if (f.mouth === 'flat') {
+    ctx.beginPath();
+    ctx.moveTo(x - mw, my + sr * 0.12);
+    ctx.lineTo(x + mw, my + sr * 0.12);
+    ctx.stroke();
+  } else if (f.mouth === 'frown') {
+    ctx.beginPath();
+    ctx.arc(x, my + sr * 0.38, mw, 1.15 * Math.PI, 1.85 * Math.PI);
+    ctx.stroke();
+  }
+
+  if (f.tears) {
+    ctx.fillStyle = '#60a8e0';
+    [[x - eyeOff, eyeY + eyeR], [x + eyeOff, eyeY + eyeR]].forEach(([tx, ty]) => {
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.bezierCurveTo(tx - sr*0.06, ty + sr*0.18, tx + sr*0.06, ty + sr*0.22, tx, ty + sr*0.32);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
+  if (state === 'selected') {
+    ctx.beginPath();
+    ctx.arc(x, y, sr + 6, 0, Math.PI * 2);
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.restore();
+}
+
+function drawLabel(f, pos, state) {
+  const { x, r } = pos;
+  const { h } = getSize();
+  const labelY = h - 28;
+  ctx.fillStyle = state === 'selected' ? '#111' : '#555';
+  ctx.font = `${state === 'selected' ? 'bold' : '600'} ${Math.max(10, r * 0.26)}px Segoe UI, sans-serif`;
+  ctx.textAlign = 'center';
+  const words = f.label.split(' ');
+  const line1 = words.slice(0, 2).join(' ');
+  const line2 = words.slice(2).join(' ');
+  ctx.fillText(line1, x, labelY - 12);
+  if (line2) ctx.fillText(line2, x, labelY + 2);
+}
+
+let _size = {};
+function getSize() { return _size; }
+
+function draw() {
+  const { w, h } = getLayout();
+  _size = { w, h };
+  ctx.clearRect(0, 0, w, h);
+  FACES.forEach((f, i) => {
+    const state = selected === i ? 'selected' : hovered === i ? 'hover' : 'normal';
+    drawFace(f, positions[i], state);
+    drawLabel(f, positions[i], state);
+  });
+}
+
+function hitTest(mx, my) {
+  for (let i = 0; i < positions.length; i++) {
+    const { x, y, r } = positions[i];
+    const dx = mx - x, dy = my - y;
+    if (dx*dx + dy*dy <= (r * 1.15) * (r * 1.15)) return i;
+  }
+  return -1;
+}
+
+function getMousePos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.offsetWidth / rect.width;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleX
+  };
+}
+
+canvas.addEventListener('mousemove', e => {
+  const { x, y } = getMousePos(e);
+  const idx = hitTest(x, y);
+  if (idx !== hovered) { hovered = idx; canvas.style.cursor = idx >= 0 ? 'pointer' : 'default'; draw(); }
+});
+canvas.addEventListener('mouseleave', () => { hovered = null; draw(); });
+
+canvas.addEventListener('click', e => {
+  const { x, y } = getMousePos(e);
+  const idx = hitTest(x, y);
+  if (idx < 0) return;
+  selected = idx;
+  draw();
+  showFeedback(idx);
+});
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.offsetWidth / rect.width;
+  const x = (t.clientX - rect.left) * scaleX;
+  const y = (t.clientY - rect.top) * scaleX;
+  const idx = hitTest(x, y);
+  if (idx < 0) return;
+  selected = idx;
+  draw();
+  showFeedback(idx);
+}, { passive: false });
+
+function showFeedback(idx) {
+  const f = FACES[idx];
+  const fb = document.getElementById('feedback');
+  fb.style.background = f.bg;
+  fb.style.color = f.text;
+  fb.style.border = `2px solid ${f.border}`;
+  fb.innerHTML = `
+    <span class="emoji-big">${f.emoji}</span>
+    <div class="score">Score: ${f.score}/10</div>
+    <div class="label">${f.label}</div>
+    <div class="desc">${f.desc}</div>
+  `;
+  fb.className = 'show';
+  document.getElementById('reset-btn').className = 'show';
+  fb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function reset() {
+  selected = null;
+  hovered = null;
+  draw();
+  const fb = document.getElementById('feedback');
+  fb.className = '';
+  document.getElementById('reset-btn').className = '';
+}
+
+window.addEventListener('resize', draw);
+draw();
+</script>
+</body>
+</html>
